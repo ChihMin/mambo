@@ -157,7 +157,7 @@ bool unlink_direct_branch(dbm_code_cache_meta *bb_meta, void **o_write_p, int fr
       break;
 #elif __aarch64__
     case uncond_imm_a64:
-      assert(fragment_id < CODE_CACHE_SIZE);
+      assert(fragment_id < BB_META_SIZE);
       offset = 4;
       break;
     case cond_imm_a64:
@@ -210,11 +210,11 @@ void unlink_fragment(int fragment_id, uintptr_t pc) {
   branch_type type = bb_meta->exit_branch_type;
 
   #ifdef __arm__
-  while (fragment_id >= CODE_CACHE_SIZE &&
+  while (fragment_id >= BB_META_SIZE &&
          (type == uncond_imm_arm || type == uncond_imm_thumb ||
           type == uncond_blxi_thumb || type == uncond_blxi_arm)) {
   #elif __aarch64__
-  while (fragment_id >= CODE_CACHE_SIZE && type == uncond_imm_a64) {
+  while (fragment_id >= BB_META_SIZE && type == uncond_imm_a64) {
   #endif
     fragment_id++;
     bb_meta = &current_thread->code_cache_meta[fragment_id];
@@ -506,8 +506,8 @@ uintptr_t signal_dispatcher(int i, siginfo_t *info, void *context) {
   ucontext_t *cont = (ucontext_t *)context;
 
   uintptr_t pc = (uintptr_t)cont->pc_field;
-  uintptr_t cc_start = (uintptr_t)&current_thread->code_cache->blocks[trampolines_size_bbs];
-  uintptr_t cc_end = cc_start + MAX_BRANCH_RANGE;
+  uintptr_t cc_start = (uintptr_t)&current_thread->code_cache->bbs[trampolines_size_bytes];
+  uintptr_t cc_end = cc_start + TOTAL_CC_SIZE;
 
   if (pc == ((uintptr_t)current_thread->code_cache + self_send_signal_offset)) {
     translate_delayed_signal_frame(cont);
