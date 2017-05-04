@@ -207,9 +207,9 @@ int syscall_handler_pre(uintptr_t syscall_no, uintptr_t *args, uint16_t *next_in
       break;
     case __NR_exit:
       debug("thread exit\n");
-#ifdef PLUGINS_NEW
-      mambo_deliver_callbacks(POST_THREAD_C, thread_data, -1, -1, -1, -1, -1, NULL, NULL, NULL);
-#endif
+
+      assert(unregister_thread(thread_data, false) == 0);
+
       if (munmap(thread_data->code_cache, CC_SZ_ROUND(sizeof(dbm_code_cache))) != 0) {
         fprintf(stderr, "Error freeing code cache on exit()\n");
         while(1);

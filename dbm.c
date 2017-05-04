@@ -294,6 +294,69 @@ uintptr_t scan(dbm_thread *thread_data, uint16_t *address, int basic_block) {
   return adjust_cc_entry(block_address);
 }
 
+int lock_thread_list() {
+  return pthread_mutex_lock(&global_data.thread_list_mutex);
+}
+
+int unlock_thread_list() {
+  return pthread_mutex_unlock(&global_data.thread_list_mutex);
+}
+
+int register_thread(dbm_thread *thread_data, bool caller_has_lock) {
+  int ret;
+
+  if (!caller_has_lock) {
+    ret = lock_thread_list();
+    assert(ret == 0);
+  }
+
+  thread_data->next_thread = global_data.threads;
+  global_data.threads = thread_data;
+
+  mambo_deliver_callbacks(PRE_THREAD_C, thread_data, -1, -1, -1, -1, -1, NULL, NULL, NULL);
+
+  if (!caller_has_lock) {
+    ret = unlock_thread_list();
+    assert(ret == 0);
+  }
+
+  return 0;
+}
+
+int unregister_thread(dbm_thread *thread_data, bool caller_has_lock) {
+  int ret, status = 0;
+
+  if (!caller_has_lock) {
+    ret = lock_thread_list();
+    assert(ret == 0);
+  }
+
+  if (global_data.threads == thread_data) {
+    global_data.threads = thread_data->next_thread;
+  } else {
+    dbm_thread *prev_thread = global_data.threads;
+    while (prev_thread->next_thread != thread_data && prev_thread->next_thread != NULL) {
+      prev_thread = prev_thread->next_thread;
+    }
+    if (prev_thread->next_thread == thread_data) {
+      prev_thread->next_thread = thread_data->next_thread;
+    } else {
+      status = -1;
+    }
+  }
+
+  if (status == 0) {
+    mambo_deliver_callbacks(POST_THREAD_C, thread_data, -1, -1, -1, -1, -1, NULL, NULL, NULL);
+  }
+
+  if (!caller_has_lock) {
+    ret = unlock_thread_list();
+    assert(ret == 0);
+  }
+
+  return status;
+}
+
 void dbm_exit(dbm_thread *thread_data, uint32_t code) {
   int bb_count = thread_data->entry_address.count;
   int collision_rate = thread_data->entry_address.collisions * 1000 / bb_count;
@@ -371,7 +434,7 @@ void init_thread(dbm_thread *thread_data) {
                         
   debug("Syscall wrapper addr: 0x%x\n", thread_data->syscall_wrapper_addr);
 
-  mambo_deliver_callbacks(PRE_THREAD_C, thread_data, -1, -1, -1, -1, -1, NULL, NULL, NULL);
+  assert(register_thread(thread_data, false) == 0);
 }
 
 bool is_bb(dbm_thread *thread_data, uintptr_t addr) {
@@ -460,7 +523,10 @@ void main(int argc, char **argv, char **envp) {
   global_data.argc = argc;
   global_data.argv = argv;
 
-  int ret = interval_map_init(&global_data.exec_allocs, 512);
+  int ret = pthread_mutex_init(&global_data.thread_list_mutex, NULL);
+  assert(ret == 0);
+
+  ret = interval_map_init(&global_data.exec_allocs, 512);
   assert(ret == 0);
 
   ret = pthread_mutex_init(&global_data.signal_handlers_mutex, NULL);
